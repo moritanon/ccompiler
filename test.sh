@@ -20,6 +20,7 @@ assert() {
 
 assert 0 0
 assert 42 42
+assert 21 "5+20-4"
 # assert 1024 1024 # 0 - 255 までしかexitコードは受け付けない
 
 echo OK
