@@ -21,13 +21,18 @@ struct Token {
 };
 
 Token *token;  // 現在のtoken;
+char *user_input; // 入力プログラム
 
 /**
  * エラーを報告するための関数
  */
-void error(char *fmt, ...) {
+void error_at(char *loc, char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
+    int pos = (int)(loc - user_input);
+    fprintf(stderr, "%s\n", user_input);
+    fprintf(stderr, "%*s", pos, " ");  // pos個の空白を出力
+    fprintf(stderr, "^ ");
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     exit(1);
@@ -51,7 +56,7 @@ bool consume(char op) {
  */
 int expect_number() {
     if (token->kind != TK_NUM) {
-        error("数ではありません。");
+        error_at(token->str, "数ではありません。");
     }
     int val = token->val;
     token = token->next;
@@ -102,7 +107,7 @@ Token *tokenize(char *p) {
             continue;
         }
 
-        error("トークナイズ出来ません。");
+        error_at(p, "トークナイズ出来ません。");
     }
     new_token(TK_EOF, cur, p);
     return head.next;
@@ -116,8 +121,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // 入力の保存
+    user_input = argv[1];
     // トークナイズする。
-    token = tokenize(argv[1]);
+    token = tokenize(user_input);
 
     printf(".intel_syntax noprefix\n");
     printf(".global main\n");
