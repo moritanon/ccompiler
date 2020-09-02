@@ -6,7 +6,10 @@
 #include <string.h>
 
 /**
-expr    = mul ("+" mul | "-" mul)*
+expr    = equality
+equality   = relational ("==" relational | "!=" relational)*
+relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+add        = mul ("+" mul | "-" mul)*
 mul     = unary ("*" unary | "/" unary)*
 unary   = ("+" | "-")? primary
 primary = num | "(" expr ")"
@@ -14,6 +17,10 @@ primary = num | "(" expr ")"
 
 // 抽象構文木のノードの種類
 typedef enum {
+    ND_EQV, // ==
+    ND_NEQ, // !=
+    ND_LES, // <   // > 左右ひっくり返す
+    ND_LEQ, // <=   // >= 左右ひっくり返して
     ND_ADD, // +
     ND_SUB, // -
     ND_MUL, // *
@@ -52,6 +59,9 @@ Node *new_node_num(int val) {
 // function prototype
 Node *mul();
 Node *primary(); 
+Node *equality();
+Node *relational();
+Node *add(); 
 
 
 typedef enum {
@@ -67,6 +77,7 @@ struct Token {
     Token *next;        // 次の入力トークン
     int val;            // kindが TK_NUMの場合、その数値
     char *str;          // トークン文字列
+    int  len;           // トークンの長さ
 };
 
 Token *token;  // 現在のtoken;
@@ -91,8 +102,10 @@ void error_at(char *loc, char *fmt, ...) {
  * 次のトークンが期待している記号の時には、トークンを読みすすめて、真を返す。
  * それ以外は、偽を返す。
  */
-bool consume(char op) {
-    if (token->kind != TK_RESERVED || token->str[0] != op) {
+bool consume(char *op) {
+    if (token->kind != TK_RESERVED ||
+        strlen(op) != token->len || 
+        memcmp(token->str, op, token->len)) {
         return false;
     }
     token = token->next;
@@ -103,9 +116,12 @@ bool consume(char op) {
  * 次のトークンが期待している記号のときには、トークンを1つ読み進める。
  * それ以外の場合にはエラーを報告する。
  */
-void expect(char op) {
-  if (token->kind != TK_RESERVED || token->str[0] != op)
-    error_at(token->str, "'%c'ではありません", op);
+void expect(char *op) {
+  if (token->kind != TK_RESERVED ||
+        strlen(op) != token->len || 
+        memcmp(token->str, op, token->len)) {
+    error_at(token->str, "'%s'ではありません", op);
+  }
   token = token->next;
 }
 
@@ -132,10 +148,11 @@ bool at_eof() {
 /**
  * 新しいトークンを作成して、curに繋げる。
  */
-Token* new_token(TokenKind kind, Token *cur, char* str) {
+Token* new_token(TokenKind kind, Token *cur, char* str, int len) {
     Token *tok = (Token*)calloc(1, sizeof(Token));
     tok->kind = kind;
     tok->str = str;
+    tok->len = len;
     cur->next = tok;
     return tok;
 }
@@ -154,46 +171,94 @@ Token *tokenize(char *p) {
             p++;
             continue;
         }
-
+        if (!memcmp(p, "==", 2) ||
+            !memcmp(p, "!=", 2) ||
+            !memcmp(p, ">=", 2) ||
+            !memcmp(p, "<=", 2)) {
+            cur = new_token(TK_RESERVED, cur, p, 2);
+            p += 2;
+            continue;
+        }
         if (*p == '+' || *p == '-' ||
             *p == '*' || *p == '/' ||
+            *p == '>' || *p == '<' ||
             *p == '(' || *p == ')') {
-            cur = new_token(TK_RESERVED, cur, p++);
+            cur = new_token(TK_RESERVED, cur, p++, 1);
             continue;
         }
 
         if(isdigit(*p)) {
-            cur = new_token(TK_NUM, cur, p);
-            cur->val = (int)strtol(p, &p, 10);
+            char *org_p = p;
+            int val = (int)strtol(p, &p, 10);
+            int len  = (int)(p - org_p);
+            cur = new_token(TK_NUM, cur, org_p, len);
+            cur->val = val;
             continue;
         }
 
         error_at(p, "トークナイズ出来ません。");
     }
-    new_token(TK_EOF, cur, p);
+    new_token(TK_EOF, cur, p, 0);
     return head.next;
 }
 
 Node *expr() {
+    Node *node = equality();
+    return node;
+}
+
+Node *equality() {
+    Node *node = relational();
+    for (;;) {
+        if (consume("==")) {
+            node = new_node(ND_EQV, node, relational());
+        } else if (consume("!=")) {
+            node = new_node(ND_NEQ, node, relational());
+        } else {
+            break;
+        }
+    }
+    return node;
+}
+
+Node *relational() {
+    Node *node = add();
+    for (;;) {
+        if (consume(">=")) {
+            node = new_node(ND_LEQ, add(), node);
+        } else if (consume("<=")) {
+            node = new_node(ND_LEQ, node, add());
+        } else if (consume(">")) {
+            node = new_node(ND_LES, add(), node);
+        } else if (consume("<")) {
+            node = new_node(ND_LES, node, add());
+        } else {
+            break;
+        }
+    }
+    return node;
+}
+
+Node *add() {
     Node *node = mul();
 
     for (;;) {
-        if (consume('+')) {
+        if (consume("+")) {
             node = new_node(ND_ADD, node, mul());
-        } else if (consume('-')) {
+        } else if (consume("-")) {
             node = new_node(ND_SUB, node, mul());
         } else {
-            return node;
+            break;
         }
     }
-    return NULL;
+    return node;
 }
 
 Node *unary() {
-    if (consume('+')) {
+    if (consume("+")) {
         return primary();
     }
-    if (consume('-')) {
+    if (consume("-")) {
         return new_node(ND_SUB, new_node_num(0), primary());
     }
     return primary();
@@ -201,9 +266,9 @@ Node *unary() {
 
 Node *primary() {
     // 次のトークンが"("なら、"(" expr ")" であるはず
-    if (consume('(')) {
+    if (consume("(")) {
         Node *node = expr();
-        expect(')');
+        expect(")");
         return node;
     }
     //そうでないなら数値
@@ -214,9 +279,9 @@ Node *mul() {
     Node *node = unary();
 
     for(;;) {
-        if (consume('*')) {
+        if (consume("*")) {
             node = new_node(ND_MUL, node, unary());
-        } else if (consume('/')) {
+        } else if (consume("/")) {
             node = new_node(ND_DIV, node, unary());
         }
         return node;
@@ -249,6 +314,26 @@ void gen(Node *node) {
     case ND_DIV:
         printf("    cqo\n");
         printf("    idiv rdi\n");
+        break;
+    case ND_EQV:
+        printf("    cmp rax, rdi\n");
+        printf("    sete al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_NEQ:
+        printf("    cmp rax, rdi\n");
+        printf("    setne al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_LES:
+        printf("    cmp rax, rdi\n");
+        printf("    setl al\n");
+        printf("    movzb rax, al\n");
+        break;
+    case ND_LEQ:
+        printf("    cmp rax, rdi\n");
+        printf("    setle al\n");
+        printf("    movzb rax, al\n");
         break;
     }
     printf("    push rax\n");
