@@ -25,6 +25,9 @@ assert 41 " 12 + 34 - 5 "
 assert 5 "1 * 2 + 3"
 assert 15 '5*(9-6)'
 assert 4 '(3+5)/2'
+assert 10 '-10+20'
+assert 10 '-(5+5)+20'
+assert 10 '+11+-1'
 # assert 1024 1024 # 0 - 255 までしかexitコードは受け付けない
 
 echo OK
