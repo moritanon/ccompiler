@@ -1,3 +1,5 @@
+#include "9cc.h"
+
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -15,28 +17,38 @@ unary   = ("+" | "-")? primary
 primary = num | "(" expr ")"
 **/
 
-// 抽象構文木のノードの種類
-typedef enum {
-    ND_EQV, // ==
-    ND_NEQ, // !=
-    ND_LES, // <   // > 左右ひっくり返す
-    ND_LEQ, // <=   // >= 左右ひっくり返して
-    ND_ADD, // +
-    ND_SUB, // -
-    ND_MUL, // *
-    ND_DIV, // /
-    ND_NUM, // 整数
-} NodeKind;
-
-
-typedef struct Node Node;
-
-struct Node {
-    NodeKind kind;
-    Node *lhs;  // 左辺
-    Node *rhs;  // 右辺
-    int  val;   // Nodeが数値の場合のみ使用する。
+struct Token {
+    TokenKind kind;     // トークンの型
+    Token *next;        // 次の入力トークン
+    int val;            // kindが TK_NUMの場合、その数値
+    char *str;          // トークン文字列
+    int  len;           // トークンの長さ
 };
+
+// function prototype
+Node *mul();
+Node *primary(); 
+Node *equality();
+Node *relational();
+Node *add(); 
+
+Token *token;  // 現在のtoken;
+char *user_input; // 入力プログラム
+
+/**
+ * エラーを報告するための関数
+ */
+void error_at(char *loc, char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int pos = (int)(loc - user_input);
+    fprintf(stderr, "%s\n", user_input);
+    fprintf(stderr, "%*s", pos, " ");  // pos個の空白を出力
+    fprintf(stderr, "^ ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
 
 Node *new_node(NodeKind kind, Node *lhs, Node *rhs) {
     Node *node = (Node*)calloc(1, sizeof(Node));
@@ -56,47 +68,6 @@ Node *new_node_num(int val) {
     return node;
 }
 
-// function prototype
-Node *mul();
-Node *primary(); 
-Node *equality();
-Node *relational();
-Node *add(); 
-
-
-typedef enum {
-    TK_RESERVED = 0,  // 記号
-    TK_NUM,           // 整数トークン
-    TK_EOF,           // 入力の終り
-} TokenKind;
-
-typedef struct Token Token;
-
-struct Token {
-    TokenKind kind;     // トークンの型
-    Token *next;        // 次の入力トークン
-    int val;            // kindが TK_NUMの場合、その数値
-    char *str;          // トークン文字列
-    int  len;           // トークンの長さ
-};
-
-Token *token;  // 現在のtoken;
-char *user_input; // 入力プログラム
-
-/**
- * エラーを報告するための関数
- */
-void error_at(char *loc, char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    int pos = (int)(loc - user_input);
-    fprintf(stderr, "%s\n", user_input);
-    fprintf(stderr, "%*s", pos, " ");  // pos個の空白を出力
-    fprintf(stderr, "^ ");
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\n");
-    exit(1);
-}
 
 /**
  * 次のトークンが期待している記号の時には、トークンを読みすすめて、真を返す。
@@ -287,78 +258,4 @@ Node *mul() {
         return node;
     }
     return NULL;
-}
-
-void gen(Node *node) {
-    if (node->kind == ND_NUM) {
-        printf("    push %d\n", node->val);
-        return;
-    }
-
-    gen(node->lhs);
-    gen(node->rhs);
-
-    printf("    pop rdi\n");
-    printf("    pop rax\n");
-
-    switch(node->kind) {
-    case ND_ADD:
-        printf("    add rax, rdi\n");
-        break;
-    case ND_SUB:
-        printf("    sub rax, rdi\n");
-        break;
-    case ND_MUL:
-        printf("    imul rax, rdi\n");
-        break;
-    case ND_DIV:
-        printf("    cqo\n");
-        printf("    idiv rdi\n");
-        break;
-    case ND_EQV:
-        printf("    cmp rax, rdi\n");
-        printf("    sete al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_NEQ:
-        printf("    cmp rax, rdi\n");
-        printf("    setne al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_LES:
-        printf("    cmp rax, rdi\n");
-        printf("    setl al\n");
-        printf("    movzb rax, al\n");
-        break;
-    case ND_LEQ:
-        printf("    cmp rax, rdi\n");
-        printf("    setle al\n");
-        printf("    movzb rax, al\n");
-        break;
-    }
-    printf("    push rax\n");
-}
-
-int main(int argc, char **argv)
-{
-    if (argc != 2) {
-        fprintf(stderr, "引数の数が正しくありません。\n");
-        return 1;
-    }
-
-    // 入力の保存
-    user_input = argv[1];
-    // トークナイズする。
-    token = tokenize(user_input);
-    Node *node  = expr();
-
-    printf(".intel_syntax noprefix\n");
-    printf(".global main\n");
-    printf("main:\n");
-
-    gen(node);
-
-    printf("    pop rax\n");
-    printf("    ret\n");
-    return 0;
 }
