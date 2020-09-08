@@ -31,11 +31,14 @@ void gen(Node *node) {
         printf("    push %d\n", node->val);
         return;
     case ND_LVAR:
+        printf("    /* gen code ND_LVAR */\n");
+        gen_lval(node);
         printf("    pop rax\n");
         printf("    mov rax, [rax]\n");
         printf("    push rax\n");
         return ;
     case ND_ASSIGN:
+        printf("    /* gen code ND_ASSIGN */\n");
         gen_lval(node->lhs);
         gen(node->rhs);
 
