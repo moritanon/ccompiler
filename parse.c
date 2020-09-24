@@ -40,6 +40,7 @@ Node *add();
 
 Token *token;  // 現在のtoken;
 char *user_input; // 入力プログラム
+LVar *locals;   // ローカル変数
 Node *code[100];
 
 /**
@@ -133,6 +134,16 @@ bool at_eof() {
     return token->kind == TK_EOF;
 }
 
+// 変数を名前で検索する
+LVar *find_lvar(Token *tok) {
+    for (LVar *var = locals; var; var = var->next) {
+        if (var->len == tok->len && !memcmp(var->name, tok->str, tok->len)) {
+            return var;
+        }
+    }
+    return NULL;
+}
+
 /**
  * 新しいトークンを作成して、curに繋げる。
  */
@@ -177,7 +188,12 @@ Token *tokenize(char *p) {
         }
 
         if ('a' <= *p && *p <= 'z') {
-            cur = new_token(TK_IDENT, cur, p++, 1);
+            int len = 0;
+            while(isalnum(*(p+len))) {
+                len++;
+            }
+            cur = new_token(TK_IDENT, cur, p, len);
+            p+=len;
             continue;
         }
 
@@ -288,12 +304,26 @@ Node *primary() {
         expect(")");
         return node;
     }
-    //そうでないなら数値
+
     Token *tok = consume_ident();
     if (tok) {
         Node *node = (Node*)calloc(1, sizeof(Node));
         node->kind = ND_LVAR;
-        node->offset = (tok->str[0] - 'a' + 1) * 8;
+
+        LVar *lvar = find_lvar(tok);
+        if (lvar) {
+            node->offset = lvar->offset;
+        } else {
+            lvar = (LVar *)calloc(1, sizeof(LVar));
+            lvar->next = locals;
+            lvar->name = tok->str;
+            lvar->len = tok->len;
+            if (locals) {
+                lvar->offset = locals->offset + 8;
+            }
+            node->offset = lvar->offset;
+            locals = lvar;
+        }
         return node;
     }
     return new_node_num(expect_number());

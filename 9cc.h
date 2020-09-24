@@ -24,6 +24,15 @@ typedef enum {
     ND_NUM, // 整数
 } NodeKind;
 
+typedef struct LVar LVar;
+
+struct LVar {
+    LVar *next;
+    char *name;
+    int len;
+    int offset;
+};
+
 typedef struct Node Node;
 typedef struct Token Token;
 
@@ -34,6 +43,7 @@ struct Node {
     int  val;   // Nodeが数値の場合のみ使用する。
     int offset;    // kindがND_LVARの場合のみ使う
 };
+
 
 
 // function prototype
